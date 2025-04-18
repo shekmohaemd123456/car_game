@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Desert Road Runner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Press Start 2P', cursive;
+      background-color: #f7f7f7;
+    }
+
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background-color: #f0e6d2;
+      overflow: hidden;
+    }
+
+    #road {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      height: 120px;
+      background-color: #333;
+      z-index: 2;
+    }
+
+    .road-marking {
+      position: absolute;
+      bottom: 45px;
+      width: 50px;
+      height: 10px;
+      background-color: #fff;
+      z-index: 3;
+    }
+
+    #car {
+      position: absolute;
+      bottom: 0px;
+      left: 40px;
+      width: 200px;
+      height: 200px;
+      background-image: url('assets/car.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      z-index: 10;
+      transform: scale(0.7);
+    }
+
+    .obstacle {
+      position: absolute;
+      bottom: 80px;
+      width: 80px;
+      height: 70px;
+      background-image: url('assets/obstacle.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      z-index: 5;
+    }
+
+    .cloud {
+      position: absolute;
+      width: 70px;
+      height: 40px;
+      background-image: url('assets/cloud.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      opacity: 0.8;
+      z-index: 1;
+    }
+
+    #score {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      font-size: 20px;
+      color: #333;
+      z-index: 20;
+    }
+
+    #game-over {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      color: #ff3333;
+      text-align: center;
+      display: none;
+      z-index: 20;
+    }
+
+    #start-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(240, 230, 210, 0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+    }
+
+    #start-button {
+      margin-top: 20px;
+      padding: 10px 30px;
+      font-size: 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    #start-button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="road"></div>
+    <div id="score">0</div>
+    <div id="game-over">
+      GAME OVER<br>
+      <span id="final-score">0</span><br>
+      Press Space to Restart
+    </div>
+    <div id="start-screen">
+      <h1>DESERT ROAD RUNNER</h1>
+      <p>Avoid the obstacles and survive as long as you can!</p>
+      <button id="start-button">START GAME</button>
+      <p class="mt-8">Press SPACE or UP ARROW to jump</p>
+    </div>
+    <div id="car"></div>
+  </div>
+
+  <script>
+    const gameContainer = document.getElementById('game-container');
+    const car = document.getElementById('car');
+    const scoreEl = document.getElementById('score');
+    const gameOverEl = document.getElementById('game-over');
+    const finalScoreEl = document.getElementById('final-score');
+    const startScreen = document.getElementById('start-screen');
+    const startButton = document.getElementById('start-button');
+
+    let gameSpeed = 5;
+    let score = 0;
+    let isJumping = false;
+    let isGameOver = false;
+    let gameStarted = false;
+    let jumpStart = 0;
+    let animationId;
+
+    const obstacles = [];
+    const clouds = [];
+    const roadMarkings = [];
+
+    for (let i = 0; i < 10; i++) {
+      const mark = document.createElement('div');
+      mark.className = 'road-marking';
+      mark.style.left = (i * 200) + 'px';
+      gameContainer.appendChild(mark);
+      roadMarkings.push({ el: mark, x: i * 200 });
+    }
+
+    for (let i = 0; i < 5; i++) {
+      createCloud(Math.random() * window.innerWidth, Math.random() * 200);
+    }
+
+    function startGame() {
+      gameStarted = true;
+      isGameOver = false;
+      score = 0;
+      gameSpeed = 5;
+      scoreEl.textContent = '0';
+      startScreen.style.display = 'none';
+      gameOverEl.style.display = 'none';
+
+      obstacles.forEach(o => o.el.remove());
+      clouds.forEach(c => c.el.remove());
+      obstacles.length = clouds.length = 0;
+
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function gameLoop() {
+      if (isGameOver) return cancelAnimationFrame(animationId);
+
+      score += 0.1;
+      scoreEl.textContent = Math.floor(score);
+      if (Math.floor(score) % 500 === 0) gameSpeed += 0.5;
+
+      updateCarPosition();
+      updateObstacles();
+      updateClouds();
+      updateRoadMarks();
+      detectCollisions();
+
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function updateCarPosition() {
+      if (!isJumping) return;
+      const jumpDuration = 700;
+      const t = (Date.now() - jumpStart) / jumpDuration;
+      if (t >= 1) {
+        car.style.bottom = '0px';
+        isJumping = false;
+      } else {
+        const height = Math.round(220 * Math.sin(Math.PI * t));
+        car.style.bottom = height + 'px';
+      }
+    }
+
+    function updateObstacles() {
+      if (Math.random() < 0.0025 * gameSpeed) {
+        if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < window.innerWidth - 400) {
+          createObstacle();
+        }
+      }
+
+      obstacles.forEach((obj, idx) => {
+        obj.x -= gameSpeed;
+        obj.el.style.left = obj.x + 'px';
+        if (obj.x < -200) {
+          obj.el.remove();
+          obstacles.splice(idx, 1);
+        }
+      });
+    }
+
+    function updateClouds() {
+      if (Math.random() < 0.002) createCloud(window.innerWidth, Math.random() * 200);
+
+      clouds.forEach((c, idx) => {
+        c.x -= gameSpeed * 0.5;
+        c.el.style.left = c.x + 'px';
+        if (c.x < -100) {
+          c.el.remove();
+          clouds.splice(idx, 1);
+        }
+      });
+    }
+
+    function updateRoadMarks() {
+      roadMarkings.forEach(mark => {
+        mark.x -= gameSpeed;
+        if (mark.x < -50) mark.x = window.innerWidth;
+        mark.el.style.left = mark.x + 'px';
+      });
+    }
+
+   function detectCollisions() {
+  const carRect = car.getBoundingClientRect();
+
+  // Fine-tuned shrink values
+  const shrinkLeft = 30;
+  const shrinkRight = 30;
+  const shrinkTop = 10;     // Increase this to reduce top sensitivity
+  const shrinkBottom = 10;
+
+  const carBox = {
+    left: carRect.left + shrinkLeft,
+    right: carRect.right - shrinkRight,
+    top: carRect.top + shrinkTop,
+    bottom: carRect.bottom - shrinkBottom,
+  };
+
+  for (let obj of obstacles) {
+    const r = obj.el.getBoundingClientRect();
+    const obstacleBox = {
+      left: r.left + 20,
+      right: r.right - 20,
+      top: r.top + 20,
+      bottom: r.bottom - 20,
+    };
+
+    if (
+      carBox.left < obstacleBox.right &&
+      carBox.right > obstacleBox.left &&
+      carBox.top < obstacleBox.bottom &&
+      carBox.bottom > obstacleBox.top
+    ) {
+      return triggerGameOver();
+    }
+  }
+}
+
+
+
+    function triggerGameOver() {
+      isGameOver = true;
+      finalScoreEl.textContent = Math.floor(score);
+      gameOverEl.style.display = 'block';
+    }
+
+    function createObstacle() {
+      const el = document.createElement('div');
+      el.className = 'obstacle';
+      el.style.left = window.innerWidth + 'px';
+      gameContainer.appendChild(el);
+      obstacles.push({ el, x: window.innerWidth });
+    }
+
+    function createCloud(x, y) {
+      const el = document.createElement('div');
+      el.className = 'cloud';
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      gameContainer.appendChild(el);
+      clouds.push({ el, x });
+    }
+
+    function jump() {
+      if (!gameStarted || isGameOver || isJumping) return;
+      isJumping = true;
+      jumpStart = Date.now();
+    }
+
+    document.addEventListener('keydown', e => {
+      if ((e.code === 'Space' || e.key === 'ArrowUp') && !gameStarted) return startGame();
+      if ((e.code === 'Space' || e.key === 'ArrowUp') && isGameOver) return startGame();
+      if ((e.code === 'Space' || e.key === 'ArrowUp')) return jump();
+    });
+
+    startButton.addEventListener('click', startGame);
+
+    document.addEventListener('touchstart', () => {
+      if (!gameStarted || isGameOver) return startGame();
+      jump();
+    });
+
+    
+  </script>
+</body>
+</html>
